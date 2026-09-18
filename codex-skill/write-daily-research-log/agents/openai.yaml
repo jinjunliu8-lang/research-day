@@ -1,0 +1,6 @@
+interface:
+  display_name: "每日科研工作日记"
+  short_description: "从服务器证据生成带科研图的 Obsidian 每日实验记录"
+  default_prompt: "使用 $write-daily-research-log，把今天可验证的科研工作、实验结果和科研图整理到我的 Obsidian 日记。"
+policy:
+  allow_implicit_invocation: true
