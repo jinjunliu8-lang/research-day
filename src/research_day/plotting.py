@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +36,9 @@ CAPTIONS = {
     "daily_training_curves": "当日实验的训练和验证曲线。",
     "daily_evaluation": "当日实验的总体指标与分类 F1。",
     "daily_confusion_matrices": "当日实验的混淆矩阵。",
+    "fig_teacher_multiseed_stability": "Perch 2.0 教师模型在 5 个随机种子下的主测试与严格测试 Macro-F1。",
+    "fig_student_training_and_confusion": "Student Only 小型 CNN 的训练轨迹、总体指标、分类 F1 与混淆矩阵。",
+    "fig_rocwre_clanut_error_audit": "Student Only 中 `rocwre→clanut` 错误塌缩的混淆结构、描述性声学特征与代表样本。",
 }
 
 
@@ -83,7 +87,7 @@ def _copy_existing_figures(evidence: dict[str, Any], output: Path) -> list[dict[
         if not source_text:
             continue
         source = Path(source_text)
-        if source.exists() and source.stem.lower().startswith("fig") and source.stem[3:5].isdigit():
+        if source.exists() and re.match(r"(?i)^fig(?:ure)?(?:\d+|_)", source.stem):
             candidates.append((source.stem, source))
     selected: dict[str, Path] = {}
     for stem, source in sorted(candidates):
@@ -105,6 +109,11 @@ def _copy_existing_figures(evidence: dict[str, Any], output: Path) -> list[dict[
             for csv_path in source_data.glob("*.csv"):
                 shutil.copy2(csv_path, data_output / csv_path.name)
             copied_data_dirs.add(source_data)
+        if source.parent not in copied_data_dirs:
+            data_output.mkdir(parents=True, exist_ok=True)
+            for csv_path in source.parent.glob("*.csv"):
+                shutil.copy2(csv_path, data_output / csv_path.name)
+            copied_data_dirs.add(source.parent)
         figures.append(
             {
                 "stem": stem,

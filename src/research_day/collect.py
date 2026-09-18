@@ -16,7 +16,7 @@ from .util import day_window, iso_now, redact_text, run_command, sha256_file, wr
 
 
 FAILURE_RE = re.compile(r"(?i)(traceback|\berror\b|failed|failure|out of memory|\boom\b|killed)")
-FIGURE_RE = re.compile(r"(?i)^(fig(?:ure)?\d+|confusion|training|metrics|evaluation|pca)")
+FIGURE_RE = re.compile(r"(?i)^(fig(?:ure)?(?:\d+|_)|confusion|training|metrics|evaluation|pca)")
 
 
 def _allowed(path: Path, capture: dict[str, Any], max_bytes: int) -> tuple[bool, str | None]:
@@ -282,7 +282,8 @@ def _sync_remote_files(
 def _load_metrics(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
     for record in records:
-        if Path(record["relative_path"]).name != "metrics.json":
+        name = Path(record["relative_path"]).name
+        if name not in {"metrics.json", "summary.json"}:
             continue
         path_text = record.get("local_copy") or record.get("path")
         if not path_text:
@@ -292,6 +293,45 @@ def _load_metrics(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             runs.append({"source_file": record["relative_path"], "status": "invalid", "error": redact_text(str(exc))})
+            continue
+        if name == "summary.json":
+            primary = payload.get("primary_test_macro_f1")
+            strict = payload.get("strict_test_macro_f1")
+            if not isinstance(primary, dict) or not isinstance(strict, dict):
+                continue
+            runs.append(
+                {
+                    "source_file": record["relative_path"],
+                    "status": "completed",
+                    "experiment": payload.get("experiment", path.parent.name),
+                    "seed": None,
+                    "seeds": payload.get("seeds", []),
+                    "aggregate": True,
+                    "device": None,
+                    "epochs_completed": None,
+                    "best_val_macro_f1": None,
+                    "parameter_count": None,
+                    "inference_ms_per_clip": None,
+                    "evaluations": {
+                        "primary_test": {
+                            "macro_f1": primary.get("mean"),
+                            "macro_f1_std": primary.get("std"),
+                            "macro_f1_min": primary.get("min"),
+                            "macro_f1_max": primary.get("max"),
+                            "n": primary.get("n"),
+                        },
+                        "strict_test": {
+                            "macro_f1": strict.get("mean"),
+                            "macro_f1_std": strict.get("std"),
+                            "macro_f1_min": strict.get("min"),
+                            "macro_f1_max": strict.get("max"),
+                            "n": strict.get("n"),
+                        },
+                    },
+                    "config": (payload.get("config_audit") or {}).get("normalized_config", {}),
+                    "raw": payload,
+                }
+            )
             continue
         runs.append(
             {
@@ -309,6 +349,7 @@ def _load_metrics(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "raw": payload,
             }
         )
+    runs.sort(key=lambda item: (not item.get("aggregate", False), item.get("source_file", "")))
     return runs
 
 

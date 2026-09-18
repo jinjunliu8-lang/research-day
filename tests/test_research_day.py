@@ -115,6 +115,33 @@ def test_collect_parses_metrics_and_history(tmp_path: Path) -> None:
     assert evidence["sources"]["remote"]["message"] == "local-only collection"
 
 
+def test_collect_parses_multiseed_summary_and_fig_prefix(tmp_path: Path) -> None:
+    global_config, project_config, _ = _setup(tmp_path)
+    output = Path(project_config["local_root"]) / "outputs" / "summary"
+    output.mkdir()
+    summary = output / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "experiment": "teacher_multiseed",
+                "seeds": [42, 43, 44],
+                "primary_test_macro_f1": {"n": 3, "mean": 0.9, "std": 0.01, "min": 0.89, "max": 0.91},
+                "strict_test_macro_f1": {"n": 3, "mean": 0.88, "std": 0.02, "min": 0.86, "max": 0.9},
+            }
+        ),
+        encoding="utf-8",
+    )
+    figure = output / "fig_teacher_stability.png"
+    figure.write_bytes(b"png")
+    stamp = datetime(2026, 9, 17, 12, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+    os.utime(summary, (stamp, stamp))
+    os.utime(figure, (stamp, stamp))
+    evidence, _ = collect_evidence(global_config, project_config, datetime.fromisoformat(DAY).date(), local_only=True)
+    assert evidence["metrics"][0]["aggregate"] is True
+    assert evidence["metrics"][0]["evaluations"]["primary_test"]["macro_f1"] == 0.9
+    assert evidence["figures"][0]["stem"] == "fig_teacher_stability"
+
+
 def test_collect_excludes_secrets_models_and_large_files(tmp_path: Path) -> None:
     global_config, project_config, _ = _setup(tmp_path)
     output = Path(project_config["local_root"]) / "outputs" / "run1"

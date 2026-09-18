@@ -46,8 +46,12 @@ def _summary(evidence: dict[str, Any]) -> str:
     primary = evaluations.get("primary_test") or next(iter(evaluations.values()), {})
     strict = evaluations.get("strict_test") or {}
     text = f"完成并记录 `{run.get('experiment', 'experiment')}`；主评估集 Macro-F1 = **{_fmt(primary.get('macro_f1'))}**"
+    if run.get("aggregate") and primary.get("macro_f1_std") is not None:
+        text += f" ± **{_fmt(primary.get('macro_f1_std'))}**（{primary.get('n', len(run.get('seeds', [])))} seeds）"
     if strict:
         text += f"，严格评估集 Macro-F1 = **{_fmt(strict.get('macro_f1'))}**"
+        if run.get("aggregate") and strict.get("macro_f1_std") is not None:
+            text += f" ± **{_fmt(strict.get('macro_f1_std'))}**"
     return text + "。结论仅基于已采集的真实指标文件。"
 
 
@@ -59,6 +63,8 @@ def _completed_work(evidence: dict[str, Any]) -> list[str]:
     for run in evidence.get("metrics", []):
         if run.get("status") == "completed":
             detail = f"完成实验 `{run.get('experiment')}`"
+            if run.get("aggregate"):
+                detail += f"（{len(run.get('seeds', []))} 个随机种子汇总）"
             if run.get("seed") is not None:
                 detail += f"（seed {run['seed']}）"
             if run.get("epochs_completed") is not None:
@@ -89,9 +95,15 @@ def _interpretation(evidence: dict[str, Any]) -> list[str]:
     primary = evaluations.get("primary_test") or next(iter(evaluations.values()), {})
     strict = evaluations.get("strict_test") or {}
     if primary:
-        paragraphs.append(
-            f"主评估集 Accuracy = {_fmt(primary.get('accuracy'))}，Macro-F1 = {_fmt(primary.get('macro_f1'))}。"
-        )
+        if completed.get("aggregate"):
+            paragraphs.append(
+                f"主评估集 Macro-F1 = {_fmt(primary.get('macro_f1'))} ± {_fmt(primary.get('macro_f1_std'))}"
+                f"（范围 {_fmt(primary.get('macro_f1_min'))}–{_fmt(primary.get('macro_f1_max'))}）。"
+            )
+        else:
+            paragraphs.append(
+                f"主评估集 Accuracy = {_fmt(primary.get('accuracy'))}，Macro-F1 = {_fmt(primary.get('macro_f1'))}。"
+            )
         per_class = primary.get("per_class_f1") or {}
         if per_class:
             easiest = max(per_class, key=per_class.get)
@@ -100,10 +112,16 @@ def _interpretation(evidence: dict[str, Any]) -> list[str]:
                 f"分类 F1 中 `{hardest}` 最低（{_fmt(per_class[hardest])}），`{easiest}` 最高（{_fmt(per_class[easiest])}）；后续应优先检查困难类别的混淆来源。"
             )
     if strict:
+        strict_text = f"严格评估集 Macro-F1 = {_fmt(strict.get('macro_f1'))}"
+        if completed.get("aggregate"):
+            strict_text += (
+                f" ± {_fmt(strict.get('macro_f1_std'))}"
+                f"（范围 {_fmt(strict.get('macro_f1_min'))}–{_fmt(strict.get('macro_f1_max'))}）"
+            )
         paragraphs.append(
-            f"严格评估集 Macro-F1 = {_fmt(strict.get('macro_f1'))}。严格视图用于控制邻近窗口重叠，不等价于外部域测试，不能据此宣称跨地点或跨设备泛化。"
+            strict_text + "。严格视图用于控制邻近窗口重叠，不等价于外部域测试，不能据此宣称跨地点或跨设备泛化。"
         )
-    if completed.get("seed") is not None:
+    if completed.get("seed") is not None and not completed.get("aggregate"):
         paragraphs.append("当前若仅包含单一随机种子，应将结果视为 baseline，正式结论需补充多种子均值与离散程度。")
     return paragraphs
 
